@@ -4,21 +4,23 @@ export interface TeamMember {
     email: string;
     fullName: string;
     department: string;
-    role: 'Owner' | 'Master' | 'Member';
+    role: string;
     assignedJobs: string[];
-    // Yeni eklenecek alanlar
     profileImage?: string;
     expertise: string[];
     phone?: string;
-    status: 'available' | 'busy' | 'away' | 'offline';
+    status: string;
     completedTasksCount: number;
     performanceScore: number;
-    onlineStatus: 'online' | 'offline';
+    onlineStatus: string;
     availabilitySchedule?: {
         startTime: string;
         endTime: string;
     };
     joinedAt: string;
+    title?: string;
+    position?: string;
+    metrics?: any;
 }
 
 export interface TeamState {
@@ -70,7 +72,11 @@ export interface Team {
     id: string;
     name: string;
     createdBy: string;
+    createdById?: string;
     inviteLink?: string;
+    inviteCode?: string;
+    description?: string;
     members: TeamMember[];
     createdAt: string;
+    status?: string;
 }

@@ -27,7 +27,8 @@ import {
     MagnifyingGlassIcon,
     PlusIcon,
     ClipboardDocumentIcon,
-    UserMinusIcon
+    UserMinusIcon,
+    ChatBubbleOvalLeftEllipsisIcon
 } from '@heroicons/react/24/outline';
 import axiosInstance from '../../services/axiosInstance';
 import { useSnackbar } from 'notistack';
@@ -72,7 +73,7 @@ const Team: React.FC = () => {
     const [addingExpertise, setAddingExpertise] = useState(false);
     const [addExpertiseDialogOpen, setAddExpertiseDialogOpen] = useState(false);
     const [expertise, setExpertise] = useState('');
-    const [selectedMemberForTask, setSelectedMemberForTask] = useState<TeamMember | null>(null);
+    const [selectedMemberForTask, setSelectedMemberForTask] = useState<TeamMember | undefined>(null as unknown as TeamMember | undefined);
     const [selectedTeamForTask, setSelectedTeamForTask] = useState<{ id: string; name: string } | null>(null);
     const [selectedUserId, setSelectedUserId] = useState<string>('');
     const [showExpertiesModal, setShowExpertiesModal] = useState(false);
@@ -95,10 +96,22 @@ const Team: React.FC = () => {
             return;
         }
 
+        // Takım verilerini yükleme
         dispatch(fetchTeamMembers());
         dispatch(fetchDepartments());
         dispatch(fetchTeams());
-    }, [dispatch, navigate]);
+
+        // Debug: kullanıcı ve takım ilişkisini logla
+        if (currentUser && teams.length > 0) {
+            console.log('Mevcut kullanıcı:', currentUser);
+            console.log('Kullanıcının oluşturduğu takımlar:', teams.filter(team => 
+                team.createdById === currentUser.id || team.createdBy === currentUser.id
+            ));
+            console.log('Kullanıcının üye olduğu takımlar:', teams.filter(team => 
+                team.members.some(member => member.id === currentUser.id)
+            ));
+        }
+    }, [dispatch, navigate, currentUser?.id, teams.length]);
 
     // Teams listesini periyodik olarak güncelle
     useEffect(() => {
@@ -360,7 +373,7 @@ const Team: React.FC = () => {
 
         // İşlemi yapan kullanıcının bu takımın owner'ı olup olmadığını kontrol et
         const isTeamOwner = teamMembers.some(member => 
-            member.id === currentUser?.id && member.role === 'Owner'
+            member.id === currentUser?.id && (member.role === 'Owner' || member.role === 'Master')
         );
 
         return (
@@ -368,7 +381,8 @@ const Team: React.FC = () => {
                 <div className="flex justify-between items-center mb-4">
                     <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{teamName}</h2>
                     <div className="flex gap-2">
-                        {teamMembers.some(member => member.role === 'Owner' && member.id === currentUser?.id) && (
+                        {/* Takım oluşturucu veya Owner/Master rolüne sahip kullanıcılar davet linki oluşturabilir */}
+                        {(isTeamOwner || currentUser?.id === teams.find(t => t.id === teamId)?.createdById) && (
                             <button
                                 onClick={() => handleGenerateInviteLink(teamId)}
                                 className={`flex items-center px-3 py-1 rounded-lg ${isDarkMode
@@ -379,7 +393,8 @@ const Team: React.FC = () => {
                                 <ClipboardDocumentIcon className="h-5 w-5 mr-2" />
                                 Davet Linki
                             </button>)}
-                        {teamMembers.some(member => member.role === 'Owner' && member.id === currentUser?.id) && (
+                        {/* Takım oluşturucu veya Owner rolüne sahip kullanıcılar takımı silebilir */}
+                        {(isTeamOwner || currentUser?.id === teams.find(t => t.id === teamId)?.createdById) && (
                             <button
                                 onClick={() => handleDeleteTeamClick(teamId)}
                                 className={`flex items-center px-3 py-1 rounded-lg ${isDarkMode
@@ -431,16 +446,26 @@ const Team: React.FC = () => {
                                                         <img className="h-10 w-10 rounded-full" src={member.profileImage} alt="" />
                                                     ) : (
                                                         <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-gray-600' : 'bg-gray-300'}`}>
-                                                            <span className={`text-xl ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                                            <span className={`text-xl font-bold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                                                                 {member.fullName.charAt(0).toUpperCase()}
                                                             </span>
                                                         </div>
                                                     )}
-                                                    <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white ${getOnlineStatusColor(member.onlineStatus)}`}></span>
+                                                    <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white ${getOnlineStatusColor(member.onlineStatus || 'online')}`}></span>
                                                 </div>
                                                 <div className="ml-4">
                                                     <div className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                                                         {member.fullName}
+                                                        {member.role === 'Owner' && (
+                                                            <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                                                Sahip
+                                                            </span>
+                                                        )}
+                                                        {member.role === 'Master' && (
+                                                            <span className="ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                                                                Yönetici
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                         {member.email}
@@ -450,7 +475,14 @@ const Team: React.FC = () => {
                                         </td>
                                         {/* TABLE DEPARTMAN */}
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className={`text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{member.department}</div>
+                                            <div className={`text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                                {member.department || member.title || 'Genel'}
+                                                {member.position && (
+                                                    <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                                        {member.position}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                         {/* TABLE PERFORMANCE */}
                                         <td className="px-6 py-4 whitespace-nowrap">
@@ -458,12 +490,15 @@ const Team: React.FC = () => {
                                                 <div className="flex-1 h-2 bg-gray-200 rounded-full">
                                                     <div
                                                         className="h-2 bg-blue-500 rounded-full"
-                                                        style={{ width: `${Math.round(member.performanceScore)}%` }}
+                                                        style={{ width: `${Math.round(member.performanceScore) || 50}%` }}
                                                     ></div>
                                                 </div>
                                                 <span className={`ml-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                    {Math.round(member.performanceScore)}%
+                                                    {Math.round(member.performanceScore) || 50}%
                                                 </span>
+                                            </div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                                {member.completedTasksCount || 0} görev tamamlandı
                                             </div>
                                         </td>
                                         {/* TABLE DURUM */}
@@ -498,32 +533,54 @@ const Team: React.FC = () => {
                                                     
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            {teamMembers.some(member => member.role === 'Owner' && member.id === currentUser?.id) && (
-                                                <>
+                                        {/* TABLE İŞLEMLER */}
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                            <div className="flex space-x-2">
+                                                <button
+                                                    onClick={() => handleOpenTaskForm(member, teamId, teamName)}
+                                                    className={`px-2 py-1 rounded-md ${isDarkMode
+                                                        ? 'bg-blue-900 hover:bg-blue-800 text-blue-200'
+                                                        : 'bg-blue-100 hover:bg-blue-200 text-blue-800'
+                                                        }`}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAddExpertiseClick(member.id)}
+                                                    className={`px-2 py-1 rounded-md ${isDarkMode
+                                                        ? 'bg-purple-900 hover:bg-purple-800 text-purple-200'
+                                                        : 'bg-purple-100 hover:bg-purple-200 text-purple-800'
+                                                        }`}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                                                    </svg>
+                                                </button>
+                                                {/* "Yorum" butonu */}
+                                                <button
+                                                    onClick={() => handleCommentClick(member.id)}
+                                                    className={`px-2 py-1 rounded-md ${isDarkMode
+                                                        ? 'bg-green-900 hover:bg-green-800 text-green-200'
+                                                        : 'bg-green-100 hover:bg-green-200 text-green-800'
+                                                        }`}
+                                                >
+                                                    <ChatBubbleOvalLeftEllipsisIcon className="h-4 w-4" />
+                                                </button>
+                                                {/* Üyeyi kaldır butonu - sadece takım sahibi görebilir ve kendini çıkaramaz */}
+                                                {(isTeamOwner || currentUser?.id === teams.find(t => t.id === teamId)?.createdById) && member.id !== currentUser?.id && (
                                                     <button
-                                                        onClick={() => handleCommentClick(member.id)}
-                                                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
+                                                        onClick={() => handleRemoveMemberClick(teamId, member.id)}
+                                                        className={`px-2 py-1 rounded-md ${isDarkMode
+                                                            ? 'bg-red-900 hover:bg-red-800 text-red-200'
+                                                            : 'bg-red-100 hover:bg-red-200 text-red-800'
+                                                            }`}
                                                     >
-                                                        <ChatBubbleLeftIcon className="h-5 w-5" />
+                                                        <UserMinusIcon className="h-4 w-4" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleOpenTaskForm(member, teamId, teamName)}
-                                                        className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 mr-4"
-                                                    >
-                                                        <ClipboardDocumentListIcon className="h-5 w-5" />
-                                                    </button>
-                                                    {isTeamOwner && member.id !== currentUser?.id && member.role !== 'Owner' && (
-                                                        <button
-                                                            onClick={() => handleRemoveMemberClick(teamId, member.id)}
-                                                            className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900"
-                                                            title="Üyeyi Çıkart"
-                                                        >
-                                                            <UserMinusIcon className="h-5 w-5" />
-                                                        </button>
-                                                    )}
-                                                </>
-                                            )}
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -548,8 +605,15 @@ const Team: React.FC = () => {
         }
     };
 
-    const getOnlineStatusColor = (status: 'online' | 'offline') => {
-        return status === 'online' ? 'bg-green-500' : 'bg-gray-400';
+    const getOnlineStatusColor = (status: string) => {
+        switch (status) {
+            case 'online':
+                return 'bg-green-500';
+            case 'offline':
+                return 'bg-gray-500';
+            default:
+                return 'bg-gray-500';
+        }
     };
 
     return (

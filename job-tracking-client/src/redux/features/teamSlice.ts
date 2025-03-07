@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createSlice, createAsyncThunk, createAction } from '@reduxjs/toolkit';
-import { TeamState, TeamMember } from '../../types/team';
+import { TeamState, TeamMember, Team } from '../../types/team';
 import axiosInstance from '../../services/axiosInstance';
 
 interface MemberMetricsUpdateDto {
@@ -315,8 +315,8 @@ export const removeTeamMember = createAsyncThunk(
 
 export const fetchTeams = createAsyncThunk(
     'Team/fetchTeams',
-    async (_, { getState, rejectWithValue }) => {
-        const state = getState() as { team: TeamState };
+    async (_, { getState, rejectWithValue, dispatch }) => {
+        const state = getState() as { team: TeamState; auth: { user: any } };
         
         // Use cached data if available and not expired
         if (isCacheValid(state.team.lastCacheTimes.teams) && state.team.teams.length > 0) {
@@ -331,9 +331,54 @@ export const fetchTeams = createAsyncThunk(
             }
             
             pendingRequests[requestKey] = true;
-            const response = await axiosInstance.get('/Team');
+            
+            // Önce takımları getir
+            const teamsResponse = await axiosInstance.get('/Team');
+            
+            // Ardından tam üye bilgilerini getir
+            const membersResponse = await axiosInstance.get('/Team/members');
+            
+            // Kullanıcı ID'lerine göre üye bilgilerini map'le
+            const membersMap = new Map();
+            membersResponse.data.forEach((member: TeamMember) => {
+                membersMap.set(member.id, member);
+            });
+            
+            // Takımların üye listelerini tam üye bilgileriyle güncelle
+            const enrichedTeams = teamsResponse.data.map((team: Team) => {
+                const enrichedMembers = team.members.map((member: TeamMember) => {
+                    const fullMemberInfo = membersMap.get(member.id);
+                    
+                    // Eğer bu üye için tam bilgi varsa, birleştir
+                    if (fullMemberInfo) {
+                        return {
+                            ...member,
+                            profileImage: fullMemberInfo.profileImage || member.profileImage,
+                            department: fullMemberInfo.department || member.department,
+                            // Performans skorlarını ekip bazlı metrics'ten al, yoksa User'dan
+                            performanceScore: member.metrics?.performanceScore || member.performanceScore || fullMemberInfo.performanceScore || 50,
+                            completedTasksCount: member.metrics?.completedTasks || member.completedTasksCount || fullMemberInfo.completedTasksCount || 0,
+                            expertise: fullMemberInfo.expertise || member.expertise || [],
+                            status: fullMemberInfo.status || member.status,
+                            onlineStatus: fullMemberInfo.onlineStatus || member.onlineStatus,
+                            title: fullMemberInfo.title || member.title,
+                            position: fullMemberInfo.position || member.position,
+                            // Full name'i doğru şekilde göstermek için
+                            fullName: member.fullName || fullMemberInfo.fullName
+                        };
+                    }
+                    
+                    return member;
+                });
+                
+                return {
+                    ...team,
+                    members: enrichedMembers
+                };
+            });
+            
             pendingRequests[requestKey] = false;
-            return response.data;
+            return enrichedTeams;
         } catch (error: any) {
             pendingRequests['fetchTeams'] = false;
             return rejectWithValue(error.response?.data?.message || 'Takımlar alınırken bir hata oluştu');
@@ -568,7 +613,18 @@ const teamSlice = createSlice({
             })
             .addCase(fetchTeamMembers.fulfilled, (state, action) => {
                 state.loading = false;
-                state.members = action.payload;
+                // Make sure each team member has default values for missing fields
+                const membersWithDefaults = action.payload.map((member: TeamMember) => ({
+                    ...member,
+                    profileImage: member.profileImage || null,
+                    performanceScore: typeof member.performanceScore === 'number' ? member.performanceScore : 50,
+                    onlineStatus: member.onlineStatus || 'online',
+                    expertise: member.expertise || [],
+                    completedTasksCount: member.completedTasksCount || 0,
+                    // Role bilgisini kontrol et
+                    role: member.role || 'Member'
+                }));
+                state.members = membersWithDefaults;
                 state.lastCacheTimes.members = Date.now();
             })
             .addCase(fetchTeamMembers.rejected, (state, action) => {
@@ -644,7 +700,31 @@ const teamSlice = createSlice({
             })
             .addCase(fetchTeams.fulfilled, (state, action) => {
                 state.loading = false;
-                state.teams = action.payload;
+                
+                // Process team data and ensure all members have default values
+                const teamsWithDefaults = action.payload.map((team: Team) => {
+                    // Process members in each team
+                    const updatedMembers = team.members.map((member: TeamMember) => ({
+                        ...member,
+                        // Değerler artık enrichedTeams işlemi sırasında eklendi, burada yalnızca boş olanlar için varsayılan değerler ekleniyor
+                        profileImage: member.profileImage || null,
+                        performanceScore: typeof member.performanceScore === 'number' ? member.performanceScore : 50,
+                        onlineStatus: member.onlineStatus || 'online',
+                        expertise: member.expertise || [],
+                        completedTasksCount: member.completedTasksCount || 0,
+                        department: member.department || 'Genel',
+                        role: member.role || 'Member'
+                    }));
+                    
+                    return {
+                        ...team,
+                        members: updatedMembers,
+                        // Backend'de CreatedById olarak gelen değeri createdBy ile eşleştir
+                        createdBy: team.createdById || team.createdBy
+                    };
+                });
+                
+                state.teams = teamsWithDefaults;
                 state.lastCacheTimes.teams = Date.now();
             })
             .addCase(fetchTeams.rejected, (state, action) => {
