@@ -60,6 +60,7 @@ const Team: React.FC = () => {
     const [inviteLink, setInviteLink] = useState('');
     const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
     const [inviteLinkDialogOpen, setInviteLinkDialogOpen] = useState(false);
+    const [showInviteLinkModal, setShowInviteLinkModal] = useState(false);
     const [inviteCode, setInviteCode] = useState('');
     const [joinTeamDialogOpen, setJoinTeamDialogOpen] = useState(false);
     const [joiningTeam, setJoiningTeam] = useState(false);
